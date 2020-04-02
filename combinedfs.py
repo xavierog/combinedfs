@@ -124,32 +124,14 @@ class CombinedFS(Operations):
 	# Filesystem methods
 
 	def access(self, path, mode):
-		# W_OK is the easiest case as we systematically return EROFS:
-		if (mode & os.W_OK):
-			return self.read_only()
-		# For other flags, it is safer to delegate to a real file.
-
-		# Will return ENOACCESS for files that are not part of the virtual
-		# directory tree:
-		cert, filename, file_spec = self.analyse_path(path)
-
-		# Handle directories, which are always ok for F_OK, R_OK and X_OK:
-		if not filename:
-			return
-
-		# Handle regular files:
-		if (mode & os.X_OK):
-			# None of the files we offer are meant for execution:
-			raise FuseOSError(errno.EACCES)
-		paths = self.get_paths(cert, file_spec)
-		if not paths:
-			# This is a virtual empty file, anyone can read it or know about
-			# its existence:
-			return
-		# Finally, just run access() on all files that compose the given path:
-		for path in paths:
-			if not os.access(path, mode):
-				raise FuseOSError(errno.EACCES)
+		"""
+		libfuse documentation states:
+		  This will be called for the access() system call. If the
+		  'default_permissions' mount option is given, this method is not called.
+		Since this program enforces default_permissions, this method will never
+		be called, which makes it dead simple to implement.
+		"""
+		pass
 
 	def getattr(self, path, fh=None):
 		cert, filename, file_spec = self.analyse_path(path)
