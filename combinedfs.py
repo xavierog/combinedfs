@@ -239,11 +239,6 @@ class CombinedFS(Operations):
 		# FIXME reset self.filedesc_index at some point?
 		del self.filedesc[fh]
 
-	def readlink(self, path):
-		# We never expose any symlink, therefore it should be safe to always
-		# return EINVAL:
-		raise FuseOSError(errno.EINVAL)
-
 	def statfs(self, path):
 		stv = os.statvfs(self.root)
 		return dict((key, getattr(stv, key)) for key in ('f_bavail', 'f_bfree',
@@ -252,6 +247,11 @@ class CombinedFS(Operations):
 
 	def flush(self, path, fh):
 		pass
+
+	def readlink(self, path):
+		# We never expose any symlink, therefore it should be safe to always
+		# return EINVAL:
+		raise FuseOSError(errno.EINVAL)
 
 	# Functions that make no sense for a read-only filesystem:
 
