@@ -84,7 +84,7 @@ class CombinedFS(Operations):
 		  cert: the target certificate; None only for the root directory;
 		  filename: the requested filename; None only for:
 		    - the root directory;
-		    - the cert-specific directory when / is used as separator;
+		    - the cert-specific directory when '/' is used as separator;
 		  file_spec: the specification for the requested filename.
 		"""
 		# Initial values:
