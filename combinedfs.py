@@ -113,13 +113,16 @@ class CombinedFS(Operations):
 		return dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
 		      'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
 
+	def expand_path(self, cert, path):
+		expanded_path = path.replace('${cert}', cert)
+		if not expanded_path.startswith('/'):
+			expanded_path = os.path.join(self.root, cert, expanded_path)
+		return expanded_path
+
 	def expand_paths(self, cert, paths):
 		expanded_paths = []
 		for path in paths:
-			path = path.replace('${cert}', cert)
-			if not path.startswith('/'):
-				path = os.path.join(self.root, cert, path)
-			expanded_paths.append(path)
+			expanded_paths.append(self.expand_path(cert, path))
 		return expanded_paths
 
 	def get_paths(self, cert, file_spec):
