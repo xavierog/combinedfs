@@ -177,36 +177,26 @@ class CombinedFS(Operations):
 		return attrs
 
 	def readdir(self, path, fh):
-		if self.separator == '/':
-			if path == '/':
-				# Top-level directory
-				yield '.'
-				yield '..'
-				for cert in os.listdir(self.root):
-					if self.filter_cert(cert):
-						yield cert
-			else:
-				# Second-level directory
-				components = path[1:].split('/')
-				if len(components) > 1:
-					raise FuseOSError(errno.ENOENT)
-				cert = components[0]
-				if not self.filter_cert(cert):
-					raise FuseOSError(errno.ENOENT)
-				yield '.'
-				yield '..'
-				for filename in self.files:
-					yield filename
-		else:
+		cert, filename, _ = self.analyse_path(path)
+		# Deal only with directories:
+		if filename:
+			raise FuseOSError(errno.ENOTDIR)
+		# Yield common directory entries:
+		yield '.'
+		yield '..'
+		if not cert:
 			# Top-level directory
-			if path != '/':
-				raise FuseOSError(errno.ENOENT)
-			yield '.'
-			yield '..'
-			for d in os.listdir(self.root):
-				if self.filter_cert(d):
+			flat_mode = self.separator != '/'
+			for cert in (d for d in os.listdir(self.root) if self.filter_cert(d)):
+				if flat_mode:
 					for filename in self.files:
-						yield d + self.separator + filename
+						yield cert + self.separator + filename
+				else:
+					yield cert
+		else:
+			# Second-level directory
+			for filename in self.files:
+				yield filename
 
 	def open(self, path, flags):
 		cert, filename, file_spec = self.analyse_path(path)
