@@ -132,8 +132,6 @@ class CombinedFS(Operations):
 	def is_sensitive_file(self, filepath):
 		return self.sensitive_pattern_re.search(filepath)
 
-	def read_only(self):
-		raise FuseOSError(errno.EROFS)
 
 	# Filesystem methods
 
@@ -279,55 +277,11 @@ class CombinedFS(Operations):
 		# return EINVAL:
 		raise FuseOSError(errno.EINVAL)
 
-	# Functions that make no sense for a read-only filesystem:
-
-	def utimens(self, path, times=None):
-		return self.read_only()
-
-	def mknod(self, path, mode, dev):
-		return self.read_only()
-
-	def rmdir(self, path):
-		return self.read_only()
-
-	def mkdir(self, path, mode):
-		return self.read_only()
-
-	def chmod(self, path, mode):
-		return self.read_only()
-
-	def chown(self, path, uid, gid):
-		return self.read_only()
-
-	def unlink(self, path):
-		return self.read_only()
-
-	def symlink(self, name, target):
-		return self.read_only()
-
-	def rename(self, old, new):
-		return self.read_only()
-
-	def link(self, target, name):
-		return self.read_only()
-
-	def create(self, path, mode, fi=None):
-		return self.read_only()
-
-	def write(self, path, buf, offset, fh):
-		return self.read_only()
-
-	def truncate(self, path, length, fh=None):
-		return self.read_only()
-
-	def fsync(self, path, fdatasync, fh):
-		return self.read_only()
-
 def main(conf_path, mountpoint):
 	conf = {}
 	with open(conf_path) as conf_file:
 		conf = yaml.load(conf_file.read())
-	FUSE(CombinedFS(conf), mountpoint, nothreads=True, foreground=True, default_permissions=True, allow_other=True)
+	FUSE(CombinedFS(conf), mountpoint, nothreads=True, foreground=True, ro=True, default_permissions=True, allow_other=True)
 
 if __name__ == '__main__':
 	main(sys.argv[1], sys.argv[2])
