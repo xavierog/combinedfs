@@ -122,7 +122,8 @@ class CombinedFS(Operations):
 	def expand_paths(self, cert, paths):
 		expanded_paths = []
 		for path in paths:
-			expanded_paths.append(self.expand_path(cert, path))
+			method = self.expand_paths if type(path) is list else self.expand_path
+			expanded_paths.append(method(cert, path))
 		return expanded_paths
 
 	def get_paths(self, cert, file_spec):
@@ -149,7 +150,23 @@ class CombinedFS(Operations):
 	def iterate_paths(self, func, paths):
 		for filepath in paths:
 			try:
-				func(filepath)
+				if type(filepath) is list:
+					# Array of file paths: look for the first existing path:
+					for index, subpath in enumerate(filepath):
+						try:
+							func(subpath)
+							# Still there? The file must exist, exit the loop:
+							break
+						except OSError as ose:
+							if ose.errno == errno.ENOENT and index < len(filepath) - 1:
+								# The file does not exist, try the next one, if any:
+								continue
+							else:
+								# Reached the last file path or encountered another error:
+								raise
+				else:
+					# Presumably a regular file path
+					func(filepath)
 			except OSError as ose:
 				raise FuseOSError(ose.errno)
 
