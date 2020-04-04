@@ -47,35 +47,6 @@ class CombinedFS(Operations):
 			return True
 		return bool(self.pattern_re.match(cert)) == self.whitelist
 
-	def read_only(self):
-		raise FuseOSError(errno.EROFS)
-
-	def _full_path(self, partial):
-		if partial.startswith("/"):
-			partial = partial[1:]
-		path = os.path.join(self.root, partial)
-		return path
-
-	def get_paths(self, cert, file_spec):
-		return self.expand_paths(cert, file_spec.get('content', []))
-
-	def is_sensitive_file(self, filepath):
-		return self.sensitive_pattern_re.search(filepath)
-
-	def expand_paths(self, cert, paths):
-		expanded_paths = []
-		for path in paths:
-			path = path.replace('${cert}', cert)
-			if not path.startswith('/'):
-				path = os.path.join(self.root, cert, path)
-			expanded_paths.append(path)
-		return expanded_paths
-
-	def attributes(self, full_path):
-		st = os.lstat(full_path)
-		return dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
-		      'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
-
 	def analyse_path(self, path):
 		"""
 		Return a tuple of three values reflecting what the given path points to.
@@ -121,6 +92,29 @@ class CombinedFS(Operations):
 				raise FuseOSError(errno.ENOENT)
 		return cert, filename, file_spec
 
+	def attributes(self, full_path):
+		st = os.lstat(full_path)
+		return dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
+		      'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
+
+	def expand_paths(self, cert, paths):
+		expanded_paths = []
+		for path in paths:
+			path = path.replace('${cert}', cert)
+			if not path.startswith('/'):
+				path = os.path.join(self.root, cert, path)
+			expanded_paths.append(path)
+		return expanded_paths
+
+	def get_paths(self, cert, file_spec):
+		return self.expand_paths(cert, file_spec.get('content', []))
+
+	def is_sensitive_file(self, filepath):
+		return self.sensitive_pattern_re.search(filepath)
+
+	def read_only(self):
+		raise FuseOSError(errno.EROFS)
+
 	# Filesystem methods
 
 	def access(self, path, mode):
@@ -136,7 +130,8 @@ class CombinedFS(Operations):
 	def getattr(self, path, fh=None):
 		cert, filename, file_spec = self.analyse_path(path)
 		if filename is None: # Directory
-			dir_attrs = self.attributes(self._full_path(path))
+			full_path = os.path.join(self.root, path.lstrip('/'))
+			dir_attrs = self.attributes(full_path)
 			dir_attrs['st_mode'] = stat.S_IFDIR | 0o555
 			return dir_attrs
 		attrs = {
