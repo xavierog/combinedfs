@@ -146,6 +146,13 @@ class CombinedFS(Operations):
 		"""
 		pass
 
+	def iterate_paths(self, func, paths):
+		for filepath in paths:
+			try:
+				func(filepath)
+			except OSError as ose:
+				raise FuseOSError(ose.errno)
+
 	def getattr(self, path, fh=None):
 		cert, filename, file_spec = self.analyse_path(path)
 		if filename is None: # Directory
@@ -171,12 +178,9 @@ class CombinedFS(Operations):
 			attrs['st_mode'] = stat.S_IFREG | self.read_mode_setting(file_spec, 'mode', def_mode)
 			return attrs
 		stats = {}
-		for filepath in paths:
-			try:
-				# DO follow symlinks (stat vs lstat):
-				stats[filepath] = os.stat(filepath)
-			except OSError as ose:
-				raise FuseOSError(ose.errno)
+		def stat_file(path):
+			stats[path] = os.stat(path)
+		self.iterate_paths(stat_file, paths)
 		for filepath, stat_obj in stats.items():
 			# Pick the highest/latest value for access/change/modification times:
 			for prop in TIME_PROPS:
@@ -231,12 +235,12 @@ class CombinedFS(Operations):
 		filedesc = self.filedesc[fh]
 		data = filedesc.get('data')
 		if data is None:
-			data = bytes([])
 			paths = self.get_paths(filedesc['cert'], filedesc['file_spec'])
-			for path in paths:
-				with open(path, 'rb') as path_fd:
-					data += path_fd.read()
-			filedesc['data'] = data
+			data = {'data': bytes() }
+			def concatenate(path):
+				data['data'] += open(path, 'rb').read()
+			self.iterate_paths(concatenate, paths)
+			filedesc['data'] = data = data['data']
 		read_chunk = data[offset:offset + length]
 		return read_chunk
 
