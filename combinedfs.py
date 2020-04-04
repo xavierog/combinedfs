@@ -132,19 +132,6 @@ class CombinedFS(Operations):
 	def is_sensitive_file(self, filepath):
 		return self.sensitive_pattern_re.search(filepath)
 
-
-	# Filesystem methods
-
-	def access(self, path, mode):
-		"""
-		libfuse documentation states:
-		  This will be called for the access() system call. If the
-		  'default_permissions' mount option is given, this method is not called.
-		Since this program enforces default_permissions, this method will never
-		be called, which makes it dead simple to implement.
-		"""
-		pass
-
 	def iterate_paths(self, func, paths):
 		for filepath in paths:
 			try:
@@ -167,6 +154,18 @@ class CombinedFS(Operations):
 					func(filepath)
 			except OSError as ose:
 				raise FuseOSError(ose.errno)
+
+	# Filesystem methods
+
+	def access(self, path, mode):
+		"""
+		libfuse documentation states:
+		  This will be called for the access() system call. If the
+		  'default_permissions' mount option is given, this method is not called.
+		Since this program enforces default_permissions, this method will never
+		be called, which makes it dead simple to implement.
+		"""
+		pass
 
 	def getattr(self, path, fh=None):
 		cert, filename, file_spec = self.analyse_path(path)
