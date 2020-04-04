@@ -21,6 +21,11 @@ DEFAULT_CERT_FILTER = False
 DEFAULT_WHITELIST = True
 DEFAULT_CERT_PATTERN = '.'
 DEFAULT_SEPARATOR = '/' 
+DEFAULT_UID = 0
+DEFAULT_GID = 0
+DEFAULT_DIR_MODE = 0o555
+DEFAULT_REG_MODE = 0o444
+DEFAULT_KEY_MODE = 0o400
 DEFAULT_SENSITIVE_PATTERN = '/privkey.pem$'
 TIME_PROPS = ('st_atime', 'st_ctime', 'st_mtime')
 
@@ -32,6 +37,11 @@ class CombinedFS(Operations):
 		self.pattern = conf.get('cert_pattern', DEFAULT_CERT_PATTERN)
 		self.separator = conf.get('separator', DEFAULT_SEPARATOR)
 		self.files = conf.get('files', {})
+		self.uid = int(conf.get('uid', DEFAULT_UID))
+		self.gid = int(conf.get('gid', DEFAULT_GID))
+		self.dir_mode = self.read_mode_setting(conf, 'dir_mode', DEFAULT_DIR_MODE)
+		self.reg_mode = self.read_mode_setting(conf, 'reg_mode', DEFAULT_REG_MODE)
+		self.key_mode = self.read_mode_setting(conf, 'key_mode', DEFAULT_KEY_MODE)
 		self.sensitive_pattern = conf.get('sensitive_pattern', DEFAULT_SENSITIVE_PATTERN)
 		self.filedesc_index = 0
 		self.filedesc = {}
@@ -41,6 +51,12 @@ class CombinedFS(Operations):
 			self.pattern_re = re.compile(self.pattern)
 
 	# Helpers:
+
+	def read_mode_setting(self, obj, key, default):
+		try:
+			return int(obj[key], 8)
+		except (KeyError, ValueError):
+			return default
 
 	def filter_cert(self, cert):
 		if not self.filter:
@@ -132,23 +148,24 @@ class CombinedFS(Operations):
 		if filename is None: # Directory
 			full_path = os.path.join(self.root, path.lstrip('/'))
 			dir_attrs = self.attributes(full_path)
-			dir_attrs['st_mode'] = stat.S_IFDIR | 0o555
+			dir_attrs['st_uid'] = self.uid
+			dir_attrs['st_gid'] = self.gid
+			dir_attrs['st_mode'] = stat.S_IFDIR | self.dir_mode
 			return dir_attrs
 		attrs = {
 			'st_nlink': 1,
-			'st_uid': file_spec.get('uid', 0),
-			'st_gid': file_spec.get('gid', 0),
-			# By default, files are considered public and thus world-readable:
-			'st_perm': 0o444,
+			'st_uid': file_spec.get('uid', self.uid),
+			'st_gid': file_spec.get('gid', self.gid),
 			'st_size': 0,
 		}
+		def_mode = self.reg_mode
 		paths = self.get_paths(cert, file_spec)
 		if not paths:
 			# Virtual empty file:
 			root_stats = os.stat(self.root)
 			for prop in TIME_PROPS:
 				attrs[prop] = getattr(root_stats, prop)
-			attrs['st_mode'] = stat.S_IFREG | attrs['st_perm']
+			attrs['st_mode'] = stat.S_IFREG | self.read_mode_setting(file_spec, 'mode', def_mode)
 			return attrs
 		stats = {}
 		for filepath in paths:
@@ -167,8 +184,8 @@ class CombinedFS(Operations):
 			attrs['st_size'] += stat_obj.st_size
 			# Lower permissions if necessary:
 			if self.is_sensitive_file(filepath):
-				attrs['st_perm'] = 0o400
-		attrs['st_mode'] = stat.S_IFREG | attrs['st_perm']
+				def_mode = self.key_mode
+		attrs['st_mode'] = stat.S_IFREG | self.read_mode_setting(file_spec, 'mode', def_mode)
 		return attrs
 
 	def readdir(self, path, fh):
