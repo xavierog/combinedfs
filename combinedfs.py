@@ -268,9 +268,6 @@ class CombinedFS(Operations):
 			'f_blocks', 'f_bsize', 'f_favail', 'f_ffree', 'f_files', 'f_flag',
 			'f_frsize', 'f_namemax'))
 
-	def flush(self, path, fh):
-		pass
-
 	def readlink(self, path):
 		# We never expose any symlink, therefore it should be safe to always
 		# return EINVAL:
