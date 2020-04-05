@@ -223,22 +223,25 @@ class CombinedFS(Operations):
 		# Deal only with directories:
 		if filename:
 			raise FuseOSError(errno.ENOTDIR)
+		# Extra attributes, just what it takes to support dirent->d_type:
+		dir_attrs = {'st_mode': stat.S_IFDIR }
+		reg_attrs = {'st_mode': stat.S_IFREG }
 		# Yield common directory entries:
-		yield '.'
-		yield '..'
+		yield '.', dir_attrs, 0
+		yield '..', dir_attrs, 0
 		if not cert:
 			# Top-level directory
 			flat_mode = self.separator != '/'
 			for cert in (d for d in os.listdir(self.root) if self.filter_cert(d)):
 				if flat_mode:
 					for filename in self.files:
-						yield cert + self.separator + filename
+						yield cert + self.separator + filename, reg_attrs, 0
 				else:
-					yield cert
+					yield cert, dir_attrs, 0
 		else:
 			# Second-level directory
 			for filename in self.files:
-				yield filename
+				yield filename, reg_attrs, 0
 
 	def open(self, path, flags):
 		cert, filename, file_spec = self.analyse_path(path)
