@@ -11,6 +11,7 @@ import sys
 import stat
 import yaml
 import errno
+import argparse
 import threading
 
 # Excerpt from `apt show python3-fusepy`:
@@ -288,11 +289,17 @@ class CombinedFS(Operations):
 		# return EINVAL:
 		raise FuseOSError(errno.EINVAL)
 
-def main(conf_path, mountpoint):
+def main(conf_path, mountpoint, foreground):
 	conf = {}
 	with open(conf_path) as conf_file:
 		conf = yaml.load(conf_file.read())
-	FUSE(CombinedFS(conf), mountpoint, foreground=True, ro=True, default_permissions=True, allow_other=True)
+	FUSE(CombinedFS(conf), mountpoint, foreground=foreground, ro=True, default_permissions=True, allow_other=True)
 
 if __name__ == '__main__':
-	main(sys.argv[1], sys.argv[2])
+	parser = argparse.ArgumentParser(description='Expose a transformed, version of Let\'s Encrypt / Certbot\'s "live" directory')
+	parser.add_argument('conf_path', help='CombinedFS configuration file')
+	parser.add_argument('mountpoint', help='mount point')
+	parser.add_argument('-o', dest='options', help='mount options (ignored, only there for compatibility purposes)')
+	parser.add_argument('-f', '--foreground', dest='foreground', help='run in the foreground', action='store_true')
+	args = parser.parse_args()
+	main(args.conf_path, args.mountpoint, args.foreground)
