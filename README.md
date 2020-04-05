@@ -23,7 +23,12 @@ CombinedFS is a FUSE FileSystem that exposes a transformed, straightforward, rea
 ## How to use it
 
 ```
-combinedfs.py /path/to/configuration.yaml /mount/point
+combinedfs.py [--foreground] /path/to/configuration.yaml /mount/point
+```
+
+fstab syntax:
+```
+/path/to/configuration.yaml    /mount/point    fuse.combinedfs    defaults    0 0
 ```
 
 Refer to `configuration.reference.yaml` to write your own configuration file.
