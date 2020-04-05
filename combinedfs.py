@@ -6,6 +6,7 @@ import sys
 import stat
 import yaml
 import errno
+import threading
 
 # Excerpt from `apt show python3-fusepy`:
 #   Due to a name clash with the existing API-incompatible python-fuse package,
@@ -43,6 +44,8 @@ class CombinedFS(Operations):
 		self.reg_mode = self.read_mode_setting(conf, 'reg_mode', DEFAULT_REG_MODE)
 		self.key_mode = self.read_mode_setting(conf, 'key_mode', DEFAULT_KEY_MODE)
 		self.sensitive_pattern = conf.get('sensitive_pattern', DEFAULT_SENSITIVE_PATTERN)
+		# File descriptor management:
+		self.filedesc_lock = threading.Lock()
 		self.filedesc_index = 0
 		self.filedesc = {}
 		# Compile regexes:
@@ -236,17 +239,21 @@ class CombinedFS(Operations):
 		if not cert or not filename:
 			raise FuseOSError(errno.ENOENT)
 		# FIXME take flags into account
-		# FIXME the code below feels unsafe
-		self.filedesc_index += 1
-		self.filedesc[self.filedesc_index] = {
+		new_fd = {
 			'cert': cert,
 			'filename': filename,
 			'file_spec': file_spec,
 		}
-		return self.filedesc_index
+		with self.filedesc_lock:
+			self.filedesc_index += 1
+			new_fd_index = self.filedesc_index
+			self.filedesc[new_fd_index] = new_fd
+		return new_fd_index
 
 	def read(self, path, length, offset, fh):
-		filedesc = self.filedesc[fh]
+		filedesc = self.filedesc.get(fh)
+		if filedesc is None:
+			raise FuseOSError(errno.EBADF)
 		data = filedesc.get('data')
 		if data is None:
 			paths = self.get_paths(filedesc['cert'], filedesc['file_spec'])
@@ -259,8 +266,11 @@ class CombinedFS(Operations):
 		return read_chunk
 
 	def release(self, path, fh):
-		# FIXME reset self.filedesc_index at some point?
-		del self.filedesc[fh]
+		with self.filedesc_lock:
+			del self.filedesc[fh]
+		# Integers in Python have arbitrary precision, i.e. they are unbounded
+		# and thus exempt from overflows as long as they are manipulated in
+		# pure Python.
 
 	def statfs(self, path):
 		stv = os.statvfs(self.root)
@@ -277,7 +287,7 @@ def main(conf_path, mountpoint):
 	conf = {}
 	with open(conf_path) as conf_file:
 		conf = yaml.load(conf_file.read())
-	FUSE(CombinedFS(conf), mountpoint, nothreads=True, foreground=True, ro=True, default_permissions=True, allow_other=True)
+	FUSE(CombinedFS(conf), mountpoint, foreground=True, ro=True, default_permissions=True, allow_other=True)
 
 if __name__ == '__main__':
 	main(sys.argv[1], sys.argv[2])
