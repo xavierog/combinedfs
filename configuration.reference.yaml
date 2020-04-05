@@ -1,0 +1,96 @@
+# Note: this is a YAML file. YAML is a superset of JSON.
+# Therefore, writing/generating your configuration file in JSON works too.
+
+# Path to Let's Encrypt "live" directory:
+letsencrypt_live: '/etc/letsencrypt/live'
+
+# Whether or not to filter certificates found in Let's Encrypt "live" directory:
+cert_filter: True
+# Python regular expression used to filter certificates:
+cert_pattern: '^(www|api)\.mysite\.net$'
+# Whether the filter above should be used as a whitelist (True) or a
+# blacklist (False):
+cert_whitelist: True
+
+# Separator between certificates and their associated files:
+# '/' will result in the usual layout, with one directory per certificate:
+#   www.mysite.net/cert.pem
+#   www.mysite.net/combined.pem
+#   api.mysite.net/cert.pem
+#   api.mysite.net/combined.pem
+separator: '/'
+# Any other character will result in a flat layout, with all certificates in a
+# single directory:
+#   www.mysite.net_cert.pem
+#   www.mysite.net_combined.pem
+#   api.mysite.net_cert.pem
+#   api.mysite.net_combined.pem
+# Do NOT use characters that can occur in a domain name, like letters, digits,
+# hyphens or dots as those are BOUND to bite you sooner or later.
+# separator: '_'
+# separator: ':'
+# separator: '@'
+
+# uid and gid for both directories and files:
+# These settings do NOT understand user and group names.
+uid: 1305
+uid: 25519
+
+# Unix modes: base-8 notation in a string.
+# Directories:
+dir_mode: '0550'
+# Regular files, typically certificates and Diffie-Hellman parameters:
+reg_mode: '0444'
+# Sensitive files, typically private keys. Combined files generated using one or
+# more sensitive files will inherit this mode too:
+key_mode: '0400'
+
+# This pattern is used to detect sensitive files; it is a Python regex matched
+# against the real, absolute, non-canonical path of each file (e.g.
+# /etc/letsencrypt/live/www.mysite.net/privkey.pem).
+sensitive_pattern: '/privkey.pem$'
+
+# For each certificate, all files described below will be exposed:
+files:
+  # It is pretty simple to expose a regular file:
+  cert.pem:
+    content: ['cert.pem']
+  # Want to remove a useless file? Do not mention it. It is that simple.
+  #chain.pem:
+  #  content: ['chain.pem']
+  fullchain.pem:
+    content: ['fullchain.pem']
+    # Per-file permissions:
+    uid: 2223
+    gid: 2226
+    mode: '0440'
+  privkey.pem:
+    content: ['privkey.pem']
+  # Concatenates fullchain.pem and privkey.pem into combined.pem:
+  combined.pem:
+    content:
+      - 'fullchain.pem'
+      - 'privkey.pem'
+  # It is possible to introduce any file in the mix through absolute paths:
+  combined-with-common-dhparam.pem:
+    content:
+      - 'fullchain.pem'
+      - 'privkey.pem'
+      - '/etc/dhparam-factory/common.pem'
+  # The ${cert} placeholder allows to fetch certificate-specific files:
+  combined-with-specific-dhparam.pem:
+    content:
+      - 'fullchain.pem'
+      - 'privkey.pem'
+      - '/etc/dhparam-factory/${cert}.pem'
+  # Specifying an array of filepaths triggers the fallback feature.
+  # This will concatenate fullchain.pem, privkey.pem and the cert-specific
+  # dhparam or, if it does not exist, the common one.
+  # No, this does not work recursively, only one level allowed.
+  combined-with-dhparam.pem:
+      - 'fullchain.pem'
+      - 'privkey.pem'
+      - ['/etc/dhparam-factory/${cert}.pem', '/etc/dhparam-factory/common.pem']
+  # Finally, an empty array means an empty file:
+  combined-with-dhparam.pem.ocsp:
+    content: []
