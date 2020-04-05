@@ -165,7 +165,7 @@ class CombinedFS(Operations):
 		Since this program enforces default_permissions, this method will never
 		be called, which makes it dead simple to implement.
 		"""
-		pass
+		raise FuseOSError(errno.ENOTSUP)
 
 	def getattr(self, path, fh=None):
 		cert, filename, file_spec = self.analyse_path(path)
