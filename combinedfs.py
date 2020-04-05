@@ -238,7 +238,7 @@ class CombinedFS(Operations):
 		cert, filename, file_spec = self.analyse_path(path)
 		if not cert or not filename:
 			raise FuseOSError(errno.ENOENT)
-		# FIXME take flags into account
+		# Being a read-only filesystem spares us the need to check most flags.
 		new_fd = {
 			'cert': cert,
 			'filename': filename,
