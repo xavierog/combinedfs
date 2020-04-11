@@ -36,8 +36,23 @@ DEFAULT_KEY_MODE = 0o400
 DEFAULT_SENSITIVE_PATTERN = '/privkey.pem$'
 TIME_PROPS = ('st_atime', 'st_ctime', 'st_mtime')
 
-class CombinedFS(Operations):
-	def __init__(self, conf):
+def read_mode_setting(obj, key, default):
+	try:
+		return int(obj[key], 8)
+	except (KeyError, ValueError):
+		return default
+
+class CombinedFSConfiguration(object):
+	def __init__(self, conf_path):
+		self.read_conf(conf_path)
+
+	def read_conf(self, conf_path):
+		with open(conf_path) as conf_file:
+			conf = yaml.load(conf_file.read())
+			self.apply_conf(conf)
+			self.path = conf_path
+
+	def apply_conf(self, conf):
 		self.root = conf.get('letsencrypt_live', DEFAULT_ROOT)
 		self.filter = conf.get('cert_filter', DEFAULT_CERT_FILTER)
 		self.whitelist = conf.get('cert_whitelist', DEFAULT_WHITELIST)
@@ -46,27 +61,16 @@ class CombinedFS(Operations):
 		self.files = conf.get('files', {})
 		self.uid = int(conf.get('uid', DEFAULT_UID))
 		self.gid = int(conf.get('gid', DEFAULT_GID))
-		self.dir_mode = self.read_mode_setting(conf, 'dir_mode', DEFAULT_DIR_MODE)
-		self.reg_mode = self.read_mode_setting(conf, 'reg_mode', DEFAULT_REG_MODE)
-		self.key_mode = self.read_mode_setting(conf, 'key_mode', DEFAULT_KEY_MODE)
+		self.dir_mode = read_mode_setting(conf, 'dir_mode', DEFAULT_DIR_MODE)
+		self.reg_mode = read_mode_setting(conf, 'reg_mode', DEFAULT_REG_MODE)
+		self.key_mode = read_mode_setting(conf, 'key_mode', DEFAULT_KEY_MODE)
 		self.sensitive_pattern = conf.get('sensitive_pattern', DEFAULT_SENSITIVE_PATTERN)
-		# File descriptor management:
-		self.filedesc_lock = threading.Lock()
-		self.filedesc_index = 0
-		self.filedesc = {}
 		# Compile regexes:
 		self.sensitive_pattern_re = re.compile(self.sensitive_pattern)
 		if self.filter:
 			self.pattern_re = re.compile(self.pattern)
 
 	# Helpers:
-
-	def read_mode_setting(self, obj, key, default):
-		try:
-			return int(obj[key], 8)
-		except (KeyError, ValueError):
-			return default
-
 	def filter_cert(self, cert):
 		if not self.filter:
 			return True
@@ -117,11 +121,6 @@ class CombinedFS(Operations):
 				raise FuseOSError(errno.ENOENT)
 		return cert, filename, file_spec
 
-	def attributes(self, full_path):
-		st = os.lstat(full_path)
-		return dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
-		      'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
-
 	def expand_path(self, cert, path):
 		expanded_path = path.replace('${cert}', cert)
 		if not expanded_path.startswith('/'):
@@ -140,6 +139,24 @@ class CombinedFS(Operations):
 
 	def is_sensitive_file(self, filepath):
 		return self.sensitive_pattern_re.search(filepath)
+
+class CombinedFS(Operations):
+	def __init__(self, conf_path):
+		# Configuration:
+		self.configuration = CombinedFSConfiguration(conf_path)
+		# File descriptor management:
+		self.filedesc_lock = threading.Lock()
+		self.filedesc_index = 0
+		self.filedesc = {}
+
+	# Helpers:
+	def attributes(self, full_path):
+		st = os.lstat(full_path)
+		return dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
+		      'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
+
+	def get_conf(self):
+		return self.configuration
 
 	def iterate_paths(self, func, paths):
 		for filepath in paths:
@@ -177,28 +194,29 @@ class CombinedFS(Operations):
 		raise FuseOSError(errno.ENOTSUP)
 
 	def getattr(self, path, fh=None):
-		cert, filename, file_spec = self.analyse_path(path)
+		conf = self.get_conf()
+		cert, filename, file_spec = conf.analyse_path(path)
 		if filename is None: # Directory
-			full_path = os.path.join(self.root, path.lstrip('/'))
+			full_path = os.path.join(conf.root, path.lstrip('/'))
 			dir_attrs = self.attributes(full_path)
-			dir_attrs['st_uid'] = self.uid
-			dir_attrs['st_gid'] = self.gid
-			dir_attrs['st_mode'] = stat.S_IFDIR | self.dir_mode
+			dir_attrs['st_uid'] = conf.uid
+			dir_attrs['st_gid'] = conf.gid
+			dir_attrs['st_mode'] = stat.S_IFDIR | conf.dir_mode
 			return dir_attrs
 		attrs = {
 			'st_nlink': 1,
-			'st_uid': file_spec.get('uid', self.uid),
-			'st_gid': file_spec.get('gid', self.gid),
+			'st_uid': file_spec.get('uid', conf.uid),
+			'st_gid': file_spec.get('gid', conf.gid),
 			'st_size': 0,
 		}
-		def_mode = self.reg_mode
-		paths = self.get_paths(cert, file_spec)
+		def_mode = conf.reg_mode
+		paths = conf.get_paths(cert, file_spec)
 		if not paths:
 			# Virtual empty file:
-			root_stats = os.stat(self.root)
+			root_stats = os.stat(conf.root)
 			for prop in TIME_PROPS:
 				attrs[prop] = getattr(root_stats, prop)
-			attrs['st_mode'] = stat.S_IFREG | self.read_mode_setting(file_spec, 'mode', def_mode)
+			attrs['st_mode'] = stat.S_IFREG | read_mode_setting(file_spec, 'mode', def_mode)
 			return attrs
 		stats = {}
 		def stat_file(path):
@@ -213,13 +231,14 @@ class CombinedFS(Operations):
 			# Add up sizes:
 			attrs['st_size'] += stat_obj.st_size
 			# Lower permissions if necessary:
-			if self.is_sensitive_file(filepath):
-				def_mode = self.key_mode
-		attrs['st_mode'] = stat.S_IFREG | self.read_mode_setting(file_spec, 'mode', def_mode)
+			if conf.is_sensitive_file(filepath):
+				def_mode = conf.key_mode
+		attrs['st_mode'] = stat.S_IFREG | read_mode_setting(file_spec, 'mode', def_mode)
 		return attrs
 
 	def readdir(self, path, fh):
-		cert, filename, _ = self.analyse_path(path)
+		conf = self.get_conf()
+		cert, filename, _ = conf.analyse_path(path)
 		# Deal only with directories:
 		if filename:
 			raise FuseOSError(errno.ENOTDIR)
@@ -231,24 +250,26 @@ class CombinedFS(Operations):
 		yield '..', dir_attrs, 0
 		if not cert:
 			# Top-level directory
-			flat_mode = self.separator != '/'
-			for cert in (d for d in os.listdir(self.root) if self.filter_cert(d)):
+			flat_mode = conf.separator != '/'
+			for cert in (d for d in os.listdir(conf.root) if conf.filter_cert(d)):
 				if flat_mode:
-					for filename in self.files:
-						yield cert + self.separator + filename, reg_attrs, 0
+					for filename in conf.files:
+						yield cert + conf.separator + filename, reg_attrs, 0
 				else:
 					yield cert, dir_attrs, 0
 		else:
 			# Second-level directory
-			for filename in self.files:
+			for filename in conf.files:
 				yield filename, reg_attrs, 0
 
 	def open(self, path, flags):
-		cert, filename, file_spec = self.analyse_path(path)
+		conf = self.get_conf()
+		cert, filename, file_spec = conf.analyse_path(path)
 		if not cert or not filename:
 			raise FuseOSError(errno.ENOENT)
 		# Being a read-only filesystem spares us the need to check most flags.
 		new_fd = {
+			'conf': conf,
 			'cert': cert,
 			'filename': filename,
 			'file_spec': file_spec,
@@ -261,11 +282,13 @@ class CombinedFS(Operations):
 
 	def read(self, path, length, offset, fh):
 		filedesc = self.filedesc.get(fh)
+		# Use the same configuration as open() when it created the file descriptor:
+		conf = filedesc['conf']
 		if filedesc is None:
 			raise FuseOSError(errno.EBADF)
 		data = filedesc.get('data')
 		if data is None:
-			paths = self.get_paths(filedesc['cert'], filedesc['file_spec'])
+			paths = conf.get_paths(filedesc['cert'], filedesc['file_spec'])
 			data = {'data': bytes() }
 			def concatenate(path):
 				data['data'] += open(path, 'rb').read()
@@ -282,7 +305,7 @@ class CombinedFS(Operations):
 		# pure Python.
 
 	def statfs(self, path):
-		stv = os.statvfs(self.root)
+		stv = os.statvfs(self.get_conf().root)
 		return dict((key, getattr(stv, key)) for key in ('f_bavail', 'f_bfree',
 			'f_blocks', 'f_bsize', 'f_favail', 'f_ffree', 'f_files', 'f_flag',
 			'f_frsize', 'f_namemax'))
@@ -293,10 +316,7 @@ class CombinedFS(Operations):
 		raise FuseOSError(errno.EINVAL)
 
 def main(conf_path, mountpoint, foreground):
-	conf = {}
-	with open(conf_path) as conf_file:
-		conf = yaml.load(conf_file.read())
-	FUSE(CombinedFS(conf), mountpoint, foreground=foreground, ro=True, default_permissions=True, allow_other=True)
+	FUSE(CombinedFS(conf_path), mountpoint, foreground=foreground, ro=True, default_permissions=True, allow_other=True)
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Expose a transformed, version of Let\'s Encrypt / Certbot\'s "live" directory')
