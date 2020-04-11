@@ -181,6 +181,13 @@ class CombinedFS(Operations):
 			except OSError as ose:
 				raise FuseOSError(ose.errno)
 
+	def register_fd(self, file_descriptor):
+		with self.filedesc_lock:
+			self.filedesc_index += 1
+			new_fd_index = self.filedesc_index
+			self.filedesc[new_fd_index] = file_descriptor
+		return new_fd_index
+
 	# Filesystem methods
 
 	def access(self, path, mode):
@@ -274,11 +281,7 @@ class CombinedFS(Operations):
 			'filename': filename,
 			'file_spec': file_spec,
 		}
-		with self.filedesc_lock:
-			self.filedesc_index += 1
-			new_fd_index = self.filedesc_index
-			self.filedesc[new_fd_index] = new_fd
-		return new_fd_index
+		return self.register_fd(new_fd)
 
 	def read(self, path, length, offset, fh):
 		filedesc = self.filedesc.get(fh)
