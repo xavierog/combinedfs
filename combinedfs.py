@@ -225,11 +225,16 @@ class CombinedFS(Operations):
 				attrs[prop] = getattr(root_stats, prop)
 			attrs['st_mode'] = stat.S_IFREG | read_mode_setting(file_spec, 'mode', def_mode)
 			return attrs
+		# One array to hold the actual, successive filepaths, one dict to hold
+		# the latest stat() result for each file:
+		filepaths = []
 		stats = {}
 		def stat_file(path):
 			stats[path] = os.stat(path)
+			filepaths.append(path)
 		self.iterate_paths(stat_file, paths)
-		for filepath, stat_obj in stats.items():
+		for filepath in filepaths:
+			stat_obj = stats[filepath]
 			# Pick the highest/latest value for access/change/modification times:
 			for prop in TIME_PROPS:
 				prop_val = getattr(stat_obj, prop)
