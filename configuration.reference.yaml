@@ -30,6 +30,10 @@ separator: '/'
 # separator: '_'
 # separator: ':'
 # separator: '@'
+# That said, if you feel adventurous:
+# - the separator is not restricted to a single character;
+# - the separator is not restricted to the ASCII table;
+# - the separator is not restricted to printable/visible characters.
 
 # uid and gid for both directories and files:
 # These settings do NOT understand user and group names.
