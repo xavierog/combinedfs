@@ -34,6 +34,12 @@ DEFAULT_DIR_MODE = 0o555
 DEFAULT_REG_MODE = 0o444
 DEFAULT_KEY_MODE = 0o400
 DEFAULT_SENSITIVE_PATTERN = '/privkey.pem$'
+
+RELOAD_PATH = '/reload'
+RELOAD_MSG_OK   = b'reload ok\n'
+RELOAD_MSG_FAIL = b'reload fail\n'
+RELOAD_FILESIZE = max(len(RELOAD_MSG_OK), len(RELOAD_MSG_FAIL))
+
 TIME_PROPS = ('st_atime', 'st_ctime', 'st_mtime')
 
 def read_mode_setting(obj, key, default):
@@ -188,6 +194,36 @@ class CombinedFS(Operations):
 			self.filedesc[new_fd_index] = file_descriptor
 		return new_fd_index
 
+	def reload(self, conf=None):
+		try:
+			if conf is None:
+				conf = self.get_conf()
+			new_conf = CombinedFSConfiguration(conf.path)
+			# Assuming CPython, this should result in a single STORE_ATTR opcode.
+			# Since this class features no __setattr__ implementation, the
+			# resulting execution should be atomic.
+			self.configuration = new_conf
+			return new_conf
+		except:
+			return None
+
+	def handle_reload_getattr(self, conf, fh):
+		return {
+			'st_nlink': 1,
+			'st_uid': conf.uid,
+			'st_gid': conf.gid,
+			'st_size': RELOAD_FILESIZE,
+			'st_mode': stat.S_IFREG | conf.key_mode,
+		}
+
+	def handle_reload_open(self, conf, flags):
+		new_conf = self.reload(conf)
+		new_fd = {
+			'conf': conf if new_conf is None else new_conf,
+			'data': RELOAD_MSG_FAIL if new_conf is None else RELOAD_MSG_OK,
+		}
+		return self.register_fd(new_fd)
+
 	# Filesystem methods
 
 	def access(self, path, mode):
@@ -202,10 +238,22 @@ class CombinedFS(Operations):
 
 	def getattr(self, path, fh=None):
 		conf = self.get_conf()
+		if path == RELOAD_PATH:
+			return self.handle_reload_getattr(conf, fh)
 		cert, filename, file_spec = conf.analyse_path(path)
 		if filename is None: # Directory
 			full_path = os.path.join(conf.root, path.lstrip('/'))
-			dir_attrs = self.attributes(full_path)
+			try:
+				dir_attrs = self.attributes(full_path)
+			except OSError as ose:
+				if ose.errno == errno.ENOENT and path == '/':
+					# Non-existent "live" directory, most likely a misconf,
+					# fake it to preserve access to RELOAD_PATH:
+					dir_attrs = {'st_nlink': 2, 'st_size': 4096}
+					for prop in TIME_PROPS:
+						dir_attrs[prop] = 0
+				else:
+					raise
 			dir_attrs['st_uid'] = conf.uid
 			dir_attrs['st_gid'] = conf.gid
 			dir_attrs['st_mode'] = stat.S_IFDIR | conf.dir_mode
@@ -276,6 +324,8 @@ class CombinedFS(Operations):
 
 	def open(self, path, flags):
 		conf = self.get_conf()
+		if path == RELOAD_PATH:
+			return self.handle_reload_open(conf, flags)
 		cert, filename, file_spec = conf.analyse_path(path)
 		if not cert or not filename:
 			raise FuseOSError(errno.ENOENT)

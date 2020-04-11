@@ -33,6 +33,12 @@ fstab syntax:
 
 Refer to `configuration.reference.yaml` to write your own configuration file.
 
+It is possible to reload the configuration file without remounting the filesystem.
+```
+cat /mount/point/reload
+```
+This will output either "reload ok" or "reload fail".
+
 ## Why?
 
 Certbot already offers hooks to handle pretty much everything, from mere concatenations to complex deployments to various kinds of clusters.
