@@ -161,6 +161,13 @@ class CombinedFS(Operations):
 		return dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
 		      'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
 
+	def certificates(self, conf):
+		for dentry in os.listdir(conf.root):
+			if conf.filter_cert(dentry):
+				fullpath = os.path.join(conf.root, dentry)
+				if os.path.isdir(fullpath):
+					yield dentry
+
 	def get_conf(self):
 		return self.configuration
 
@@ -311,7 +318,7 @@ class CombinedFS(Operations):
 		if not cert:
 			# Top-level directory
 			flat_mode = conf.separator != '/'
-			for cert in (d for d in os.listdir(conf.root) if conf.filter_cert(d)):
+			for cert in self.certificates(conf):
 				if flat_mode:
 					for filename in conf.files:
 						yield cert + conf.separator + filename, reg_attrs, 0
