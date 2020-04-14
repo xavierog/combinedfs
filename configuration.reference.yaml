@@ -38,7 +38,7 @@ separator: '/'
 # uid and gid for both directories and files:
 # These settings do NOT understand user and group names.
 uid: 1305
-uid: 25519
+gid: 25519
 
 # Unix modes: base-8 notation in a string.
 # Directories:
