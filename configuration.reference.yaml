@@ -39,6 +39,15 @@ separator: '/'
 # These settings do NOT understand user and group names.
 uid: 1305
 gid: 25519
+# They default to 0.
+
+# However, hardcoding user/group ids can be a timebomb.
+# These settings provide the ability to reflect the same uid or gid as a given
+# file:
+same-uid-as: '/path/to/target/user/home/directory'
+same-gid-as: '/path/to/file/with/adequate/ownership'
+# If the mentioned paths cannot be stat()ed, combinedfs defaults to the values
+# set via uid and gid respectively.
 
 # Unix modes: base-8 notation in a string.
 # Directories:
@@ -64,7 +73,7 @@ files:
   #  content: ['chain.pem']
   fullchain.pem:
     content: ['fullchain.pem']
-    # Per-file permissions:
+    # Per-file permissions; same-uid-as and same-gid-as are available too:
     uid: 2223
     gid: 2226
     mode: '0440'

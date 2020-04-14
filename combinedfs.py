@@ -67,6 +67,8 @@ class CombinedFSConfiguration(object):
 		self.files = conf.get('files', {})
 		self.uid = int(conf.get('uid', DEFAULT_UID))
 		self.gid = int(conf.get('gid', DEFAULT_GID))
+		self.same_uid_as = conf.get('same-uid-as', None)
+		self.same_gid_as = conf.get('same-gid-as', None)
 		self.dir_mode = read_mode_setting(conf, 'dir_mode', DEFAULT_DIR_MODE)
 		self.reg_mode = read_mode_setting(conf, 'reg_mode', DEFAULT_REG_MODE)
 		self.key_mode = read_mode_setting(conf, 'key_mode', DEFAULT_KEY_MODE)
@@ -171,6 +173,79 @@ class CombinedFS(Operations):
 	def get_conf(self):
 		return self.configuration
 
+	# uid/gid-related helpers; in the end, the xid (uid/gid) precedence is:
+	#  - filespec/same-xid-as
+	#  - filespec/xid
+	#  - conf/same-xid-as
+	#  - conf/xid
+	#  - DEFAULT_XID
+	def get_uid_gid(self, conf, filespec=None):
+		"""
+		Just-get-it-done wrapper around get_{uid,gid}_{global,for_filespec}.
+		"""
+		stats = {}
+		if filespec is None:
+			return self.get_uid_global(conf, stats), self.get_gid_global(conf, stats)
+		return self.get_uid_for_filespec(conf, filespec, stats), self.get_gid_for_filespec(conf, filespec, stats)
+
+	def get_uid_for_filespec(self, conf, filespec, stats):
+		"""
+		File-specific uid selection mechanism: attempt to use file-specific same-uid-as, falling back on
+		file-specific uid, falling back on global uid selection mechanism.
+		"""
+		uid = self.get_stat_attr(filespec.get('same-uid-as', None), 'st_uid', filespec.get('uid', None), stats)
+		if uid is None:
+			uid = self.get_uid_global(conf, stats)
+		return uid
+
+	def get_gid_for_filespec(self, conf, filespec, stats):
+		"""
+		File-specific gid selection mechanism: attempt to use file-specific same-gid-as, falling back on
+		file-specific gid, falling back on global gid selection mechanism.
+		"""
+		gid = self.get_stat_attr(filespec.get('same-gid-as', None), 'st_gid', filespec.get('gid', None), stats)
+		if gid is None:
+			gid = self.get_gid_global(conf, stats)
+		return gid
+
+	def get_uid_global(self, conf, stats):
+		"""
+		Global uid selection mechanism: attempt to use same-uid-as, falling back on uid.
+		"""
+		return self.get_stat_attr(conf.same_uid_as, 'st_uid', conf.uid, stats)
+
+	def get_gid_global(self, conf, stats):
+		"""
+		Global gid selection mechanism: attempt to use same-gid-as, falling back on gid.
+		"""
+		return self.get_stat_attr(conf.same_gid_as, 'st_gid', conf.gid, stats)
+
+	def get_stat_attr(self, path, attr, default, stats):
+		"""
+		Stat path and return the request attribute, or the default value if something goes wrong.
+		"""
+		if path is None:
+			return default
+		try:
+			return getattr(self.get_stat(path, stats), attr)
+		except:
+			return default
+
+	def get_stat(self, path, stats):
+		"""
+		Simple wrapper around os.stat() that uses a dict to implement some basic caching (for the sake of
+		uid/gid consistency, not actually for performance). Return either None or a stat structure.
+		Should throw no exceptions as long as stats is provided.
+		"""
+		stat = stats.get(path)
+		if stat is None:
+			try:
+				 stats[path] = stat = os.stat(path)
+			except:
+				pass
+		return stat
+	# End of uid/gid-related helpers
+
 	def iterate_paths(self, func, paths):
 		for filepath in paths:
 			try:
@@ -215,10 +290,11 @@ class CombinedFS(Operations):
 			return None
 
 	def handle_reload_getattr(self, conf, fh):
+		uid, gid = self.get_uid_gid(conf)
 		return {
 			'st_nlink': 1,
-			'st_uid': conf.uid,
-			'st_gid': conf.gid,
+			'st_uid': uid,
+			'st_gid': gid,
 			'st_size': RELOAD_FILESIZE,
 			'st_mode': stat.S_IFREG | conf.key_mode,
 		}
@@ -261,14 +337,16 @@ class CombinedFS(Operations):
 						dir_attrs[prop] = 0
 				else:
 					raise
-			dir_attrs['st_uid'] = conf.uid
-			dir_attrs['st_gid'] = conf.gid
+			uid, gid = self.get_uid_gid(conf)
+			dir_attrs['st_uid'] = uid
+			dir_attrs['st_gid'] = gid
 			dir_attrs['st_mode'] = stat.S_IFDIR | conf.dir_mode
 			return dir_attrs
+		uid, gid = self.get_uid_gid(conf, file_spec)
 		attrs = {
 			'st_nlink': 1,
-			'st_uid': file_spec.get('uid', conf.uid),
-			'st_gid': file_spec.get('gid', conf.gid),
+			'st_uid': uid,
+			'st_gid': gid,
 			'st_size': 0,
 		}
 		def_mode = conf.reg_mode
