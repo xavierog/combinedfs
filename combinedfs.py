@@ -54,7 +54,7 @@ class CombinedFSConfiguration(object):
 
 	def read_conf(self, conf_path):
 		with open(conf_path) as conf_file:
-			conf = yaml.load(conf_file.read())
+			conf = yaml.safe_load(conf_file.read())
 			self.apply_conf(conf)
 			self.path = conf_path
 
